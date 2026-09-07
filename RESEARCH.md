@@ -50,6 +50,9 @@ read and disabled.
 
 ## Wi-Fi findings
 
+See [the Wi-Fi investigation](WIFI_RESEARCH.md) for the follow-up transport,
+connectivity and extended diagnostic findings, including an offline decoder.
+
 Firmware uses an outbound secure WebSocket client. A direct LAN control API
 has not been established. Self-hosted server compatibility and TLS trust
 behavior have not been tested. No DNS redirection or TLS changes are needed
