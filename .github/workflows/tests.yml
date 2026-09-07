@@ -14,7 +14,7 @@ jobs:
       - run: uv sync --locked
       - run: uv run python -m unittest discover -s library/tests -v
       - run: uv run python -m unittest discover -s cli/tests -v
-      - run: uv run python -m unittest discover -s research -v
+      - run: uv run --with websockets==17.0.1 python -m unittest discover -s research -v
       - run: uv build --package catch-control && uv build --package catch-control-cli
       - run: uv run python tools/build_ha.py
       - run: git diff --exit-code -- home-assistant/custom_components/catch_control/_vendor

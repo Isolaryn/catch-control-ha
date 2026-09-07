@@ -112,7 +112,7 @@ and makes no Bluetooth/network calls. It is not bundled into the released
 library or HA integration. Synthetic tests independently pack the layout:
 
 ```sh
-uv run python -m unittest discover -s research -v
+uv run --with websockets==17.0.1 python -m unittest discover -s research -v
 ```
 
 **Existing telemetry:** the declarative layout also already contains server IP,
@@ -133,3 +133,47 @@ not competing for the connection, a credential-redacted Wi-Fi-settings read,
 and the router's device-specific DNS/firewall logs. Those logs could establish
 which outbound services the device actually attempts while its VLAN is blocked.
 They cannot be inferred from the device's historical Server Good value.
+
+## Passive TLS endpoint preparation
+
+[`research/passive_wss.py`](research/passive_wss.py) is a temporary observer,
+separate from the released packages. It binds to laptop loopback, requires a
+certificate/key, accepts `/srwe`, and stops after ten minutes by default. It
+records TLS version, message type, byte count and disconnect status. Headers,
+payloads, peer identifiers and close-reason text are not logged. It sends no
+application messages; the WebSocket library handles protocol ping/pong and close.
+Silence after connection cannot establish lack of telemetry: the application
+may expect a server handshake or subscription that this observer does not send.
+
+Run with the certificate chain valid for the chosen endpoint hostname and its
+private key stored under ignored `.secrets/`:
+
+```sh
+uv run research/passive_wss.py --cert .secrets/test-fullchain.pem --key .secrets/test-key.pem
+```
+
+An owner-controlled DMZ host can forward a chosen unprivileged TCP port back to
+this listener. With `DMZ_BIND_IP` and `DMZ_SSH_TARGET` set for that host:
+
+```sh
+ssh -NT -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+  -R "${DMZ_BIND_IP}:8443:127.0.0.1:8443" "$DMZ_SSH_TARGET"
+```
+
+The host's SSH policy must permit binding the requested DMZ address, rather
+than forcing the remote listener onto loopback. Its firewall should restrict
+access to the intended IoT source. Confirm the actual bind and end-to-end TLS
+reachability before configuring a device. The endpoint hostname must resolve
+to the DMZ address from the IoT network. TLS terminates at the laptop through
+the TCP tunnel; the private key need not be copied to the DMZ host.
+These behaviors follow the [OpenSSH remote-forwarding documentation](https://man.openbsd.org/ssh#R)
+and the [websockets server API](https://websockets.readthedocs.io/en/stable/reference/asyncio/server.html).
+
+The observer has passed loopback integration tests using an ephemeral test
+certificate explicitly trusted by the synthetic client, including metadata-only
+logging, no application reply, ping/pong and rejection of other paths. That
+certificate is only a local test fixture and has not been presented to CATCH.
+No listener or tunnel has yet been deployed on a DMZ host, and no CATCH server
+settings have been changed. Before a device test, save its current settings
+privately and establish how they will be restored; endpoint compatibility and
+application authentication remain unverified.
