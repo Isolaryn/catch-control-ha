@@ -1,0 +1,33 @@
+set_schedule:
+  name: Set schedule
+  description: Set all fields of one schedule in a single verified write. Targets a schedule enabled entity, not the physical relay.
+  target:
+    entity:
+      integration: catch_control
+      domain: switch
+  fields:
+    active:
+      name: Enabled
+      required: true
+      selector:
+        boolean:
+    mode:
+      name: Mode
+      required: true
+      selector:
+        select:
+          options: [default, export, turn_on, turn_off, top_up, voltage, frequency]
+    start:
+      name: Start
+      description: Device-local time in HH:MM, without seconds.
+      required: true
+      example: '07:00'
+      selector:
+        text:
+    stop:
+      name: Stop
+      description: Device-local time in HH:MM, without seconds.
+      required: true
+      example: '14:00'
+      selector:
+        text:

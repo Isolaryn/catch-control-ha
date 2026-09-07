@@ -1,0 +1,41 @@
+{
+  "title": "CATCH Control Bluetooth",
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Connect to CATCH Control",
+        "description": "Close Configurator on your phone. Choose a discovered device or enter its Bluetooth address. A password is optional for monitoring; provide the local device password to enable schedule changes.",
+        "data": {
+          "address": "Bluetooth address",
+          "password": "Device password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to connect. Check Bluetooth range, close the phone app, and verify the device address. Password-based controls require 2CH firmware 12718.",
+      "invalid_auth": "The local device password was not accepted."
+    },
+    "abort": {
+      "already_configured": "This Catch is already configured.",
+      "not_supported": "This device is not a supported CATCH Control 2CH."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "CATCH Control options",
+        "description": "Leave the password blank to keep it. Clear the password to return to monitoring only. Times in schedules use the device clock.",
+        "data": {
+          "scan_interval": "Polling interval (seconds)",
+          "password": "New device password",
+          "clear_password": "Clear stored password (monitoring only)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to connect to the configured Catch. Close Configurator and check Bluetooth availability.",
+      "invalid_auth": "The local device password was not accepted."
+    }
+  }
+}

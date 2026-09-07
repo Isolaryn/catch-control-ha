@@ -1,0 +1,7 @@
+FROM python:3.14-slim
+RUN pip install --no-cache-dir homeassistant==2026.9.1 bleak-retry-connector==4.7.0 construct==2.10.70 pytest==9.1.1 pytest-asyncio==1.4.0
+RUN pip install --no-cache-dir aiousbwatcher==1.1.2 serialx==1.10.0 bleak==3.0.2 bluetooth-adapters==2.4.0 bluetooth-auto-recovery==1.6.4 bluetooth-data-tools==1.29.24 dbus-fast==5.0.22 habluetooth==6.26.11
+RUN pip install --no-cache-dir aiohasupervisor==0.6.0 home-assistant-frontend==20260826.6 cronsim==2.7 securetar==2026.4.1
+ENV PYTHONPATH=/workspace
+WORKDIR /workspace
+CMD ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests"]

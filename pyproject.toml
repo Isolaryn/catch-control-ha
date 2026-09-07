@@ -1,0 +1,15 @@
+[project]
+name = "catch-control-workspace"
+version = "0.2.0"
+requires-python = ">=3.11"
+dependencies = ["catch-control==0.2.0", "catch-control-cli==0.2.0"]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["library", "cli"]
+
+[tool.uv.sources]
+catch-control = { workspace = true }
+catch-control-cli = { workspace = true }
