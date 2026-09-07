@@ -1,9 +1,9 @@
 {
   "distribution": "catch-control",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "sha256": {
     "__init__.py": "3de672ab1a4e36145fe41b7de5e6eed78f66ccba1db48f149a6d15c5178e969e",
-    "ble.py": "54542e229e590356bc5b6c5d80aa1f40ddfb346f78b4a797eab7ec858434eb30",
+    "ble.py": "7b2e91010eb953651fbc26eac72f3520457012458acee4b9336ef9f2ab3a68be",
     "checksum.py": "85682d0a5604a81df443dd7b25554fb16eec581d952ac9e24de8428bab3f9d36",
     "configuration.py": "54c380438f0ad5a9359fb28a5b28bf960830c7882a644a25a7cde80995906639",
     "enums.py": "dc75fb8a2298bbe8111a9e2a9bd3707c0dccbb5901899f8d139ae6b504341d74",

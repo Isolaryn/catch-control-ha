@@ -189,7 +189,8 @@ async def test_setup_unload_and_diagnostics(hass, entry):
     await entry.runtime_data.async_shutdown()
 
 
-async def test_registered_entities_and_combined_service(hass, entry):
+@pytest.mark.parametrize('configuration_timeout', [False, True])
+async def test_registered_entities_and_combined_service(hass, entry, configuration_timeout):
     """Exercise actual platform setup, state publishing, action routing and unload."""
     from homeassistant.helpers import device_registry, entity_registry
     from homeassistant.setup import async_setup_component
@@ -201,12 +202,29 @@ async def test_registered_entities_and_combined_service(hass, entry):
     hass.config_entries._entries[entry.entry_id] = entry
     for platform in ('sensor', 'switch', 'select', 'time'):
         assert await async_setup_component(hass, platform, {})
-    with patch('custom_components.catch_control.coordinator.client_for', return_value=fake_client()), patch('homeassistant.setup.async_process_deps_reqs', new_callable=AsyncMock):
+    client = fake_client()
+    if configuration_timeout:
+        client.configuration.side_effect = TimeoutError('private backend text')
+    with patch('custom_components.catch_control.coordinator.client_for', return_value=client), patch('homeassistant.setup.async_process_deps_reqs', new_callable=AsyncMock):
         async with asyncio.timeout(20):
             assert await hass.config_entries.async_setup(entry.entry_id)
             await hass.async_block_till_done()
         states = hass.states.async_all()
         assert len(states) == 32
+        if configuration_timeout:
+            assert sum(state.state == 'unavailable' for state in states) == 16
+            assert all(state.state not in ('unknown', 'unavailable') for state in states if state.entity_id.startswith('sensor.'))
+            diagnostic = await async_get_config_entry_diagnostics(hass, entry)
+            assert diagnostic['configuration_error'] == 'TimeoutError'
+            assert diagnostic['configuration_available'] is False
+            assert 'private backend text' not in repr(diagnostic)
+            # The next poll reads configuration on a new connection and
+            # automatically makes schedule entities available again.
+            client.configuration.side_effect = None
+            await entry.runtime_data.async_refresh()
+            await hass.async_block_till_done()
+            states = hass.states.async_all()
+            assert entry.runtime_data.configuration_error is None
         assert all(state.state not in ('unknown', 'unavailable') for state in states)
         switch = next(state.entity_id for state in states if state.entity_id.startswith('switch.') and 'schedule_4' in state.entity_id)
         assert hass.services.has_service('catch_control', 'set_schedule')
@@ -220,6 +238,27 @@ async def test_registered_entities_and_combined_service(hass, entry):
         assert all(state.state == 'unavailable' for state in hass.states.async_all())
         assert entry.state == ConfigEntryState.NOT_LOADED
         assert not list(coordinator.async_contexts())
+
+
+async def test_reload_cancellation_is_not_converted_to_read_failure(hass, entry):
+    coordinator = CatchCoordinator(hass, entry)
+    client = fake_client()
+    waiting = asyncio.Event()
+
+    async def wait_for_reply():
+        waiting.set()
+        await asyncio.Event().wait()
+
+    client.configuration.side_effect = wait_for_reply
+    with patch('custom_components.catch_control.coordinator.client_for', return_value=client):
+        task = asyncio.create_task(coordinator._async_update_data())
+        await asyncio.wait_for(waiting.wait(), timeout=1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert coordinator.data is None
+    client.__aexit__.assert_awaited_once()
+    client.apply_schedule.assert_not_called()
 
 
 async def test_connection_uses_connectable_ha_device(hass):

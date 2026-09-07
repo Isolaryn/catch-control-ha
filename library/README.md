@@ -80,6 +80,11 @@ replies lack transaction IDs. Use a new context to reconnect. Avoid concurrent
 configuration editors: a freshness read cannot exclude another controller
 saving immediately afterward.
 
+`connect_timeout` optionally sets a separate connection-establishment deadline;
+it defaults to `timeout`. Notification setup and each read use `timeout`.
+Disconnect cleanup is bounded to five seconds. Debug logs contain only operation
+numbers, timing and fragment/frame counts, never packet contents or credentials.
+
 ## Development
 
 From the repository root:

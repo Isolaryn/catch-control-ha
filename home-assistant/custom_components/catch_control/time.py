@@ -15,6 +15,8 @@ class ScheduleTime(ScheduleEntity, TimeEntity):
 
     @property
     def native_value(self):
+        if self.schedule is None:
+            return None
         value = self.schedule[f'{self.field}_minutes']
         return time(value // 60, value % 60) if 0 <= value < 1440 else None
 

@@ -1,12 +1,12 @@
 [project]
 name = "catch-control-cli"
-version = "0.2.0"
+version = "0.2.1"
 description = "CLI for the catch-control Python library"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-dependencies = ["catch-control==0.2.0"]
+dependencies = ["catch-control==0.2.1"]
 
 [project.scripts]
 catch-control = "catch_control_cli.cli:main"

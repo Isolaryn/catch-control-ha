@@ -28,8 +28,9 @@ class ScheduleEntity(CatchEntity):
 
     @property
     def schedule(self):
-        return self.coordinator.data['configuration']['overrides'][self.slot - 1]
+        configuration = self.coordinator.data.get('configuration') if self.coordinator.data else None
+        return configuration['overrides'][self.slot - 1] if configuration else None
 
     @property
     def available(self):
-        return super().available and bool(self.coordinator.password) and self.coordinator.identity.firmware == 12718
+        return super().available and self.schedule is not None and bool(self.coordinator.password) and self.coordinator.identity.firmware == 12718

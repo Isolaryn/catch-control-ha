@@ -37,7 +37,7 @@ class ScheduleSwitch(ScheduleEntity, SwitchEntity):
 
     @property
     def is_on(self):
-        return bool(self.schedule['active_raw'])
+        return bool(self.schedule['active_raw']) if self.schedule is not None else None
 
     async def async_turn_on(self, **kwargs):
         await self.coordinator.async_edit_schedule(self.slot, active=True)

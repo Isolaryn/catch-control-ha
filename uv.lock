@@ -36,7 +36,7 @@ wheels = [
 
 [[package]]
 name = "catch-control"
-version = "0.2.0"
+version = "0.2.1"
 source = { editable = "library" }
 dependencies = [
     { name = "bleak" },
@@ -51,7 +51,7 @@ requires-dist = [
 
 [[package]]
 name = "catch-control-cli"
-version = "0.2.0"
+version = "0.2.1"
 source = { editable = "cli" }
 dependencies = [
     { name = "catch-control" },
@@ -62,7 +62,7 @@ requires-dist = [{ name = "catch-control", editable = "library" }]
 
 [[package]]
 name = "catch-control-workspace"
-version = "0.2.0"
+version = "0.2.1"
 source = { virtual = "." }
 dependencies = [
     { name = "catch-control" },

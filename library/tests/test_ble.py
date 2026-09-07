@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import asyncio
 import unittest
 from unittest.mock import patch
 
@@ -62,6 +63,29 @@ class FakeBleak:
 
 
 class BleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cancelled_configuration_read_propagates_and_disconnects(self):
+        with patch('catch_control.ble.BleakClient', FakeBleak):
+            async with CatchClient('test') as client:
+                await client.telemetry()
+                client._client.silent = True
+                # Match HA setup: identity and telemetry worked, then the
+                # owning task is cancelled while configuration is outstanding.
+                requested = asyncio.Event()
+                write = client._write_chunks
+
+                async def send(packet):
+                    await write(packet)
+                    requested.set()
+
+                with patch.object(client, '_write_chunks', side_effect=send):
+                    task = asyncio.create_task(client.configuration())
+                    await asyncio.wait_for(requested.wait(), timeout=2)
+                    task.cancel()
+                    with self.assertRaises(asyncio.CancelledError):
+                        await task
+                self.assertFalse(client._client.is_connected)
+                self.assertIsNone(client._pending)
+
     def test_manufacturer_bytes(self):
         self.assertEqual(advertised_model(SimpleNamespace(manufacturer_data={0: b'\x27\x14'})), 10004)
         self.assertIsNone(advertised_model(SimpleNamespace(manufacturer_data={0x1427: b'\0\0'})))
@@ -86,6 +110,35 @@ class BleTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(client._client.is_connected)
                 with self.assertRaises(ConnectionError):
                     await client.telemetry()
+
+    async def test_configuration_timeout_has_metadata_and_bounded_cleanup(self):
+        with patch('catch_control.ble.BleakClient', FakeBleak), patch('catch_control.ble.DISCONNECT_TIMEOUT', 0.01):
+            async with CatchClient('test') as client:
+                client._client.silent = True
+                client.timeout = 0.6
+
+                async def stuck_disconnect():
+                    await asyncio.Event().wait()
+
+                with patch.object(client._client, 'disconnect', side_effect=stuck_disconnect), self.assertLogs('catch_control.ble', level='DEBUG') as logs:
+                    # A stuck backend cleanup must not turn a read timeout
+                    # into an indefinitely blocked HA setup task.
+                    with self.assertRaises(TimeoutError):
+                        await asyncio.wait_for(client.configuration(), timeout=1)
+                    # Even if disconnect did not complete, the old transport
+                    # must never accept another request with no transaction ID.
+                    with self.assertRaises(ConnectionError):
+                        await client.configuration()
+                output = '\n'.join(logs.output)
+                self.assertIn('opcode=1 outcome=TimeoutError', output)
+                self.assertIn('rx_bytes=0', output)
+                self.assertIn('tx_chunks=13', output)
+                self.assertNotIn(PASSWORD, output)
+
+    def test_invalid_connection_timeout(self):
+        for value in (0, -1, float('nan'), float('inf')):
+            with self.assertRaises(ValueError):
+                CatchClient('test', connect_timeout=value)
 
 
 class FakeConfigBleak(FakeBleak):
@@ -125,12 +178,14 @@ class ConfigurationTransportTests(unittest.IsolatedAsyncioTestCase):
             clients.append(backend)
             return backend
 
-        async with CatchClient('host-selected-device', connector=connector) as client:
-            await client.authenticate(password=PASSWORD)
-            from catch_control.configuration import AuthenticationError
-            with self.assertRaises(AuthenticationError):
-                await client.authenticate(password='wrong')
-            self.assertEqual(clients[0].save_count, 0)
+        with self.assertLogs('catch_control.ble', level='DEBUG') as logs:
+            async with CatchClient('host-selected-device', connector=connector) as client:
+                await client.authenticate(password=PASSWORD)
+                from catch_control.configuration import AuthenticationError
+                with self.assertRaises(AuthenticationError):
+                    await client.authenticate(password='wrong')
+                self.assertEqual(clients[0].save_count, 0)
+        self.assertNotIn(PASSWORD, '\n'.join(logs.output))
         self.assertFalse(clients[0].is_connected)
 
     async def test_failed_injected_connection_preserves_error(self):

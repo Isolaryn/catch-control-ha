@@ -17,7 +17,7 @@ def client_for(hass, address):
             timeout=timeout,
         )
 
-    return CatchClient(device, timeout=30, connector=connector)
+    return CatchClient(device, timeout=10, connect_timeout=30, connector=connector)
 
 
 async def probe(hass, address, password=''):

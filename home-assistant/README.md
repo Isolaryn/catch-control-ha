@@ -6,7 +6,7 @@ or newer**. Automated tests target 2026.9.1.
 
 ## Install
 
-1. Download `catch-control-home-assistant-0.2.0.zip` from
+1. Download `catch-control-home-assistant-0.2.1.zip` from
    [GitHub releases](https://github.com/Isolaryn/catch-control-ha/releases).
 2. Extract into your Home Assistant **configuration directory**. The result
    must be `custom_components/catch_control/manifest.json` alongside the other
@@ -29,6 +29,26 @@ HA host: use the device discovered by HA.
 The integration polls every 30 seconds and disconnects between transactions.
 Options allow 15–3600 seconds. Temporarily disable the integration when you need
 an uninterrupted Configurator session.
+
+If telemetry succeeds but configuration fails, sensors remain available while
+schedule controls become unavailable. Configuration is read again on the next
+poll; successful readback restores the controls. Old schedules are not shown
+as fresh data. Connection establishment allows 30 seconds, individual reads
+10 seconds, and disconnect cleanup at most 5 seconds.
+
+### Troubleshooting a configuration timeout
+
+Enable debug logging from the integration's menu, reproduce the problem, then
+disable debug logging to download the log. Version 0.2.1 adds operation numbers,
+elapsed time, sent chunk counts, received fragment/byte counts and valid frame
+counts. It does not log packet contents or passwords. Opcode 1 is configuration;
+0 is identity and 3 is telemetry. Diagnostics include the failed read stage and
+whether fresh configuration is available.
+
+A `CancelledError` during Reload or restart means HA cancelled the in-flight
+operation. Check earlier errors for the original failure. One reported setup
+configuration timeout cleared after restarting HA; its exact cause remains
+unconfirmed. A restart is a recovery option if a normal reload does not help.
 
 ## Entities
 

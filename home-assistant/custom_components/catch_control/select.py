@@ -15,6 +15,8 @@ class ScheduleMode(ScheduleEntity, SelectEntity):
 
     @property
     def current_option(self):
+        if self.schedule is None:
+            return None
         try:
             return ControlMode(self.schedule['mode_raw']).name.lower()
         except ValueError:

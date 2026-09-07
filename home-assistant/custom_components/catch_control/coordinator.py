@@ -21,6 +21,8 @@ class CatchCoordinator(DataUpdateCoordinator):
         self.address = entry.data[CONF_ADDRESS]
         self.password = entry.options.get(CONF_PASSWORD, entry.data.get(CONF_PASSWORD, ''))
         self.identity = None
+        self.configuration_error = None
+        self.last_read_stage = None
         self._transaction = asyncio.Lock()
 
     def _check_identity(self, identity):
@@ -31,12 +33,30 @@ class CatchCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self):
         async with self._transaction:
             try:
+                self.last_read_stage = 'connection/identity'
                 async with client_for(self.hass, self.address) as client:
                     self._check_identity(client.identity)
-                    return {'telemetry': await client.telemetry(), 'configuration': await client.configuration()}
+                    self.last_read_stage = 'telemetry'
+                    telemetry = await client.telemetry()
+                    self.last_read_stage = 'configuration'
+                    try:
+                        configuration = await client.configuration()
+                    except Exception as exc:
+                        # A missing configuration reply must not hide a valid
+                        # telemetry sample. Never present old schedules as fresh.
+                        error = type(exc).__name__
+                        if self.configuration_error != error:
+                            _LOGGER.warning('Configuration read failed (%s); telemetry remains available, schedule controls are unavailable; configuration will be retried on the next poll', error)
+                        self.configuration_error = error
+                        configuration = None
+                    else:
+                        if self.configuration_error:
+                            _LOGGER.info('Configuration reads recovered')
+                        self.configuration_error = None
+                    return {'telemetry': telemetry, 'configuration': configuration}
             except Exception as exc:
                 # No packet, password or config-entry data is logged.
-                raise UpdateFailed(f'Bluetooth read failed ({type(exc).__name__})') from None
+                raise UpdateFailed(f'Bluetooth read failed during {self.last_read_stage} ({type(exc).__name__})') from None
 
     async def async_edit_schedule(self, slot, **changes):
         if not self.password:
@@ -60,4 +80,5 @@ class CatchCoordinator(DataUpdateCoordinator):
                 if isinstance(exc, ValueError):
                     raise HomeAssistantError(str(exc)) from None
                 raise HomeAssistantError('Schedule change was not verified; refresh configuration before retrying') from None
+        self.configuration_error = None
         self.async_set_updated_data(data)

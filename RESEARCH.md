@@ -80,3 +80,16 @@ Remaining work includes hardware validation through HA adapters/proxies,
 physical load switching, other models/firmware, temporary one-shot overrides,
 overnight schedules, energy-counter reset semantics and optional local Wi-Fi
 control. These capabilities are not claimed as implemented or tested.
+
+## HA setup timeout follow-up (0.2.1)
+
+An HA installation completed telemetry but timed out waiting for configuration.
+A debug reload cancelled another wait at the same operation. The owner reported
+that restarting HA restored operation. This establishes recovery, not the exact
+cause of the missing reply.
+
+The patch keeps valid telemetry available when configuration fails, marks
+schedules unavailable until the next successful configuration poll, separates
+connection/read deadlines, bounds notification setup and disconnect cleanup,
+and adds metadata-only transport debug logs. Regression tests exercise partial
+setup/recovery, actual task cancellation, a missing reply and stalled cleanup.
