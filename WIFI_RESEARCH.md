@@ -38,8 +38,9 @@ The hostnames are therefore configuration, not proof of a fixed cloud endpoint.
 Changing the server settings, certificate compatibility, application handshake,
 session authentication and safe control through a self-hosted endpoint remain
 unverified. DNS redirection alone would not establish TLS or protocol compatibility.
-No redirect, certificate change, listener deployment or device setting change was
-made in this investigation. Firmware was not flashed.
+No DNS redirect, device certificate change or device setting change was made.
+A temporary owner-controlled TLS observer was subsequently deployed as described
+below. Firmware was not flashed.
 
 ### TLS and authentication evidence
 
@@ -173,7 +174,13 @@ The observer has passed loopback integration tests using an ephemeral test
 certificate explicitly trusted by the synthetic client, including metadata-only
 logging, no application reply, ping/pong and rejection of other paths. That
 certificate is only a local test fixture and has not been presented to CATCH.
-No listener or tunnel has yet been deployed on a DMZ host, and no CATCH server
-settings have been changed. Before a device test, save its current settings
+An owner-controlled endpoint was subsequently checked through a temporary DMZ
+TCP relay and SSH reverse tunnel using a normally issued certificate. A synthetic
+client passed CA and hostname validation, negotiated TLS 1.3, completed the
+WebSocket upgrade and exchanged ping/pong without application messages. The
+listener, tunnel and relay were configured to stop after 30 minutes. Host-specific
+details and certificate material remain in ignored local files. This validates
+the endpoint from that client, not reachability or TLS compatibility from CATCH.
+No CATCH server settings have been changed. Before a device test, save its current settings
 privately and establish how they will be restored; endpoint compatibility and
 application authentication remain unverified.
