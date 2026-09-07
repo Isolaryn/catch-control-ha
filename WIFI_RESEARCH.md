@@ -25,6 +25,10 @@ Firmware 12718's WebSocket event handler accepts binary application messages
 and routes them through a dispatcher distinct from the BLE dispatcher. The
 command meanings and payload sizes differ. A server cannot simply send the
 existing 255-byte BLE packets over WebSocket and assume equivalence.
+The examined dispatcher handles telemetry and configuration/control operations,
+and an outbound wrapper sends responses through the WebSocket client. This is
+a bidirectional application transport; safe self-hosted control is not yet
+implemented or tested.
 
 The client constructs an outbound `wss://<host>:<port>/srwe` connection. Primary
 and secondary hosts and ports come from mutable Wi-Fi settings. Configurator's
@@ -36,6 +40,40 @@ session authentication and safe control through a self-hosted endpoint remain
 unverified. DNS redirection alone would not establish TLS or protocol compatibility.
 No redirect, certificate change, listener deployment or device setting change was
 made in this investigation. Firmware was not flashed.
+
+### TLS and authentication evidence
+
+The URI builder fixes the scheme to `wss`, so changing the configured host and
+port does not select plaintext WebSocket transport.
+
+The application initialization was compared with the matching
+[ESP-IDF 4.4.7 client configuration definition](https://raw.githubusercontent.com/espressif/esp-idf/v4.4.7/components/esp_websocket_client/include/esp_websocket_client.h)
+and [client initialization source](https://github.com/espressif/esp-idf/blob/v4.4.7/components/esp_websocket_client/esp_websocket_client.c).
+It clears the configuration after its URI pointer, assigns that pointer, and
+enables the flags disabling automatic reconnect and ping/pong disconnection.
+Those flags do not enable a trust store or certificate pinning.
+
+In this initialization path:
+
+- No server CA certificate is supplied, and the global CA store flag is false.
+- No client certificate or private key is supplied for mutual TLS.
+- No HTTP username, password, additional headers or subprotocol is supplied.
+- No explicit certificate or public-key pin was identified in the examined
+  application connection path.
+
+This is static evidence against a specifically configured root or pin in that
+path, not a complete audit of the lower TLS stack or a live certificate-acceptance
+result. The contents of uninitialized image memory were not treated as runtime
+values; these conclusions follow from the initialization writes. Application
+session authentication remains unresolved and is separate from TLS and HTTP
+authentication. No invalid-certificate, impersonation or control-command test
+was performed.
+
+A prospective owner-configured endpoint should use TLS with a certificate valid
+for its hostname. Initial diagnostics should observe connection success and
+message metadata without sending application control messages or logging
+credentials. Certificate compatibility and the application session still need
+to be established before describing this as an operational local integration.
 
 ## Read-only diagnostic paths
 
