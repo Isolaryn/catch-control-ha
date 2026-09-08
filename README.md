@@ -1,13 +1,13 @@
-# CATCH Control local Bluetooth
+# CATCH Control local access
 
 Three projects for using a CATCH Control 2CH without giving the device internet
 access. Unofficial; not affiliated with CATCH Power.
 
 | Project | Purpose | Installation |
 | --- | --- | --- |
-| [Python library](library/) | Async BLE client, Construct binary layouts, telemetry and authenticated schedule changes | Install the library wheel or `pip install ./library` |
-| [CLI](cli/) | Discovery, JSON reads, polling, schedule previews and verified writes | Install both wheels or `pip install ./library ./cli` |
-| [Home Assistant integration](home-assistant/) | Bluetooth discovery/UI setup, 16 sensors and 16 schedule controls | Extract the integration ZIP into your HA configuration directory and restart |
+| [Python library](library/) | Async BLE client plus bidirectional device-initiated WebSocket sessions, using Construct layouts | Install the library wheel or `pip install ./library` |
+| [CLI](cli/) | BLE discovery/control and a TLS WebSocket telemetry listener | Install both wheels or `pip install ./library ./cli` |
+| [Home Assistant integration](home-assistant/) | Selectable Bluetooth or Wi-Fi transport, 16 sensors and 16 schedule controls | Extract the integration ZIP into your HA configuration directory and restart |
 
 Download installable artifacts from [GitHub releases](https://github.com/Isolaryn/catch-control-ha/releases).
 Neither Python package is currently published to PyPI. The HA ZIP bundles the
@@ -32,8 +32,9 @@ Close the phone's Configurator connection first. With multiple devices, pass
 `--address` using an identifier from `scan`. macOS identifiers are CoreBluetooth
 UUIDs; Home Assistant on Linux normally uses Bluetooth MAC addresses.
 
-The Home Assistant integration requires HA 2026.9.1 or newer and its Bluetooth
-integration with a local adapter or connectable Bluetooth proxy. See the
+The Home Assistant integration requires HA 2026.9.1 or newer. Bluetooth mode
+uses a local adapter or connectable proxy. Wi-Fi mode uses Bluetooth once to
+configure the device's outbound local server and then polls over WSS. See the
 [installation guide](home-assistant/README.md) for setup and automation examples.
 
 ## Supported behavior
@@ -52,15 +53,18 @@ compare-and-swap device operation, so avoid simultaneous configuration editors.
 
 No cloud requests are made by the client. Internet may be needed on the host
 to install dependencies; the CATCH device can remain on its isolated network.
-A direct local Wi-Fi control API has not been established.
+Firmware 12718 initiates `wss://<configured-host>:<port>/srwe`. The verified
+request/response protocol provides telemetry, schedule reads, and single-record
+schedule writes. Wi-Fi endpoint setup is authenticated and verified over BLE.
 
 ## Validation
 
-Real-device BLE reads and changing/restoring an **inactive** schedule were
-verified on firmware 12718 with the owner's internet-blocked VLAN. Physical
-load switching has not been tested. Home Assistant behavior is tested against
-HA 2026.9.1 with simulated Bluetooth responses; a HA-host/proxy hardware session
-has not yet been performed. See [protocol and validation notes](RESEARCH.md).
+Real-device BLE and WSS reads plus changing/restoring an **inactive** schedule
+over each transport were verified on firmware 12718 with the device on an
+internet-blocked VLAN. Physical load switching has not been tested. Home
+Assistant behavior is tested against HA 2026.9.1 with simulated device
+responses; the new HA Wi-Fi mode still needs validation on the target HA host.
+See [protocol and validation notes](RESEARCH.md).
 
 ```sh
 uv run python -m unittest discover -s library/tests -v

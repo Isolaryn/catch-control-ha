@@ -25,3 +25,13 @@ async def probe(hass, address, password=''):
         if password:
             await client.authenticate(password=password)
         return client.identity
+
+
+async def configure_websocket_server(hass, address, password, host, port, expected_serial):
+    """Set and verify the outbound endpoint over an authenticated BLE session."""
+    async with client_for(hass, address) as client:
+        if str(client.identity.serial) != str(expected_serial):
+            raise ValueError('A different Catch responded at the configured Bluetooth address')
+        plan = await client.plan_websocket_server(host, port, password=password)
+        result = await client.apply_websocket_server(plan, password=password)
+        return plan.before, result

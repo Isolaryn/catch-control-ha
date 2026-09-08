@@ -1,7 +1,8 @@
 # catch-control — reusable Python library
 
-Python 3.11+ asynchronous BLE client for CATCH Control 2CH (model 10004).
-Uses Bleak for transport and Construct for declarative binary layouts.
+Python 3.11+ asynchronous local client for CATCH Control 2CH (model 10004).
+It uses Bleak for setup/direct access and accepts device-initiated WebSocket
+connections. Construct defines all wire layouts.
 
 ## Install and read
 
@@ -60,6 +61,35 @@ windows must start before they stop, cannot use `DEFAULT`, and cannot introduce
 overlap with another active slot. Touching endpoints count as overlap. Existing
 overlaps can be read or disabled. Other settings and opaque bytes are preserved.
 Apply rechecks freshness and verifies readback; it never retries a save.
+
+## Local Wi-Fi server sessions
+
+Firmware 12718 connects outward to `wss://<configured-host>:<port>/srwe`. A TLS
+server supplies an accepted binary connection to `CatchWebSocketSession`:
+
+```python
+from catch_control.wifi import CatchWebSocketSession
+
+session = CatchWebSocketSession(accepted_connection)
+telemetry = await session.telemetry()
+configuration = await session.configuration()
+plan = await session.plan_schedule(
+    4, Schedule(False, ControlMode.TURN_OFF, 840, 845)
+)
+result = await session.apply_schedule(plan)
+```
+
+The connection object needs async `send(bytes)` and `recv()` methods. Requests
+are serialized because replies have no transaction identifier. Configuration
+decoding consumes but never returns the embedded password. A schedule write
+uses the firmware's validated 7-byte record operation, compares all four
+schedules before saving, and verifies all four afterward.
+
+Use `CatchClient.plan_websocket_server(host, port, password=...)` and
+`apply_websocket_server(...)` over Bluetooth to set both primary and secondary
+device server slots. The plan preserves IP, SSID, Wi-Fi credentials, thresholds,
+and opaque extension bytes. Ports 1–32767 and 29-byte DNS/IPv4 host names are
+supported by the verified firmware layout.
 
 Handle `AuthenticationError`, `ConfigurationConflict`, `WriteVerificationError`
 from `catch_control.configuration`, and `ProtocolError` from `catch_control`.

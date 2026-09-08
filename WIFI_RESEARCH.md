@@ -1,7 +1,7 @@
 # Wi-Fi control and diagnostics investigation
 
-Updated 2026-09-07. This is an interoperability investigation, not a claim that
-local Wi-Fi control is implemented. App and firmware artifacts stay private.
+Updated 2026-09-08. App, firmware, packet captures and device-specific settings
+stay private; the independently implemented protocol layouts are public.
 
 ## What is established
 
@@ -9,8 +9,8 @@ local Wi-Fi control is implemented. App and firmware artifacts stay private.
 | --- | --- | --- |
 | Direct HTTP/HTTPS on CATCH | Device answers ICMP; TCP connections to 80 and 443 were refused in this session | No web API at those ports at the time checked; other ports/protocols are not ruled out |
 | Direct Modbus/TCP on CATCH | TCP 502 refused; vendor documents configure port 502 on the inverter | Published Modbus/TCP support does not establish an inbound CATCH control server |
-| Outbound WebSocket | Firmware creates a secure WebSocket client and dispatches binary messages | Potential self-hosted route, requiring server configuration, normal TLS trust/server identity and application-protocol compatibility |
-| Wi-Fi diagnostics over BLE | App declares read operations and firmware contains the extended signal-reply handler | Useful diagnostic path independent of a local Wi-Fi control API |
+| Outbound WebSocket | Firmware has bidirectional dispatch; device completed WSS with RSA TLS and answered telemetry/configuration requests plus a reversible schedule write | Local metrics and single-schedule control are verified on firmware 12718 |
+| Wi-Fi diagnostics over BLE | App/firmware layout matched a live extended health reply | Diagnostic path works independently of a local Wi-Fi control API; capability and collection state matter |
 
 The vendor's [SMA installation guide](https://docsengine.catchpower.com.au/builder/doc/1KGdTkeST4og1yPz4GVC0LzfeesoqiQSf)
 enables Modbus TCP on the **inverter**, with CATCH connecting to it. The
@@ -26,21 +26,19 @@ and routes them through a dispatcher distinct from the BLE dispatcher. The
 command meanings and payload sizes differ. A server cannot simply send the
 existing 255-byte BLE packets over WebSocket and assume equivalence.
 The examined dispatcher handles telemetry and configuration/control operations,
-and an outbound wrapper sends responses through the WebSocket client. This is
-a bidirectional application transport; safe self-hosted control is not yet
-implemented or tested.
+and an outbound wrapper sends responses through the WebSocket client. Telemetry,
+configuration reads, and one validated schedule-record write are implemented.
 
 The client constructs an outbound `wss://<host>:<port>/srwe` connection. Primary
 and secondary hosts and ports come from mutable Wi-Fi settings. Configurator's
 Wi-Fi setup code preserves those fields when changing SSID/credentials.
 The hostnames are therefore configuration, not proof of a fixed cloud endpoint.
 
-Changing the server settings, certificate compatibility, application handshake,
-session authentication and safe control through a self-hosted endpoint remain
-unverified. DNS redirection alone would not establish TLS or protocol compatibility.
-No DNS redirect, device certificate change or device setting change was made.
-A temporary owner-controlled TLS observer was subsequently deployed as described
-below. Firmware was not flashed.
+Primary and secondary server settings were temporarily changed over Bluetooth
+and verified by readback, then restored and verified after each bounded test.
+RSA certificate compatibility and the request/response protocol were then
+verified with a temporary owner-controlled endpoint. Firmware was not flashed,
+and no device trust settings were changed.
 
 ### TLS and authentication evidence
 
@@ -62,19 +60,23 @@ In this initialization path:
 - No explicit certificate or public-key pin was identified in the examined
   application connection path.
 
-This is static evidence against a specifically configured root or pin in that
-path, not a complete audit of the lower TLS stack or a live certificate-acceptance
-result. The contents of uninitialized image memory were not treated as runtime
-values; these conclusions follow from the initialization writes. Application
-session authentication remains unresolved and is separate from TLS and HTTP
-authentication. No invalid-certificate, impersonation or control-command test
-was performed.
+The matching ESP-IDF 4.4.7 TLS implementation can begin a client handshake with
+all of those verification inputs absent only when its compile-time
+`CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY` option is enabled; that path configures
+mbedTLS with `VERIFY_NONE`. The live ClientHello therefore confirms that this
+firmware does not authenticate the server certificate in this path. It still
+sends the configured hostname as SNI. A self-signed RSA certificate is therefore
+sufficient; no root installation is needed. This is a device security limitation,
+so network isolation of the listener matters.
 
-A prospective owner-configured endpoint should use TLS with a certificate valid
-for its hostname. Initial diagnostics should observe connection success and
-message metadata without sending application control messages or logging
-credentials. Certificate compatibility and the application session still need
-to be established before describing this as an operational local integration.
+The contents of uninitialized image memory were not treated as runtime values;
+these conclusions follow from the initialization writes, matching upstream
+control flow and the live handshake. The live device accepted protocol requests
+immediately after upgrade, with no additional application login or handshake.
+
+The Home Assistant implementation generates and retains a long-lived RSA
+self-signed certificate. The listener should remain reachable only from the
+intended IoT network because the device does not authenticate it.
 
 ## Read-only diagnostic paths
 
@@ -88,8 +90,11 @@ clear saved Wi-Fi configuration before scanning.
 **Extended Wi-Fi health (BLE opcode 30):** the app defines a 43-byte packed
 payload within the ordinary BLE frame. Firmware 12718 has a matching handler
 that copies these fields into its response. This is stronger evidence than
-merely finding a diagnostic string, but the device's live capability flags
-and collected values still need to be read to establish runtime usefulness.
+merely finding a diagnostic string. A subsequent live read confirmed the layout
+and returned gateway-RTT and application-disconnect capability flags alongside
+collected signal/latency measurements. A reply soon after restarting Wi-Fi had
+fewer capability flags and zero collection timestamp/measurements. Those values
+must not be interpreted as a fresh healthy-link report.
 
 The payload includes:
 
@@ -123,15 +128,16 @@ health report will not by itself diagnose an HA adapter/proxy disconnection.
 
 ## Evidence and next checks
 
-This session used read-only static analysis and ICMP plus TCP-connect checks on
+Initial investigation used read-only static analysis and ICMP plus TCP-connect checks on
 three standard ports. The device was reachable; the tested TCP ports were refused.
-No Bluetooth connection was opened, so HA could continue collecting its logs.
+Bluetooth was initially left free so HA could collect logs; subsequent device
+tests ran after the owner released Bluetooth from HA and Configurator.
 The private connectivity report and decompilation exports remain under ignored
 `artifacts/configurator/`.
 
-Next useful checks are a single read of the extended health reply when HA is
-not competing for the connection, a credential-redacted Wi-Fi-settings read,
-and the router's device-specific DNS/firewall logs. Those logs could establish
+Wi-Fi settings and health replies have now been read and backed up privately.
+Further useful evidence includes device-side TLS errors and the router's
+device-specific DNS/firewall logs. Those logs could establish
 which outbound services the device actually attempts while its VLAN is blocked.
 They cannot be inferred from the device's historical Server Good value.
 
@@ -181,6 +187,65 @@ WebSocket upgrade and exchanged ping/pong without application messages. The
 listener, tunnel and relay were configured to stop after 30 minutes. Host-specific
 details and certificate material remain in ignored local files. This validates
 the endpoint from that client, not reachability or TLS compatibility from CATCH.
-No CATCH server settings have been changed. Before a device test, save its current settings
-privately and establish how they will be restored; endpoint compatibility and
-application authentication remain unverified.
+Before a device test, save current settings privately and establish how they will
+be restored; endpoint compatibility and application authentication remain unverified.
+
+## Bounded device endpoint tests
+
+After fixing name resolution on the device's configured DNS resolver, bounded
+tests temporarily pointed both server entries at the owner endpoint. Each test
+authenticated the device, checked a fresh settings read against its
+private backup, preserved all fields except the two hosts and ports, and verified
+the write. Each then restored all 228 Wi-Fi settings bytes and verified that the
+stable control configuration still matched its backup.
+
+With an ECDSA certificate, the device established TCP connections and sent a TLS 1.2 ClientHello. Passive
+handshake decoding with Scapy identified a TLS 1.2 ServerHello selecting
+`TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384`, followed by four certificates, an X25519
+server key exchange and ServerHelloDone. The captured client traffic did not
+continue the handshake. No device HTTP upgrade or WebSocket application message
+was observed. A second test increased the listener opening timeout from 10 to
+60 seconds with the same certificate; it did not resolve the failure.
+
+Replacing that endpoint certificate with a separately issued RSA-2048 certificate
+for the same hostname changed the result. A normal client first passed CA and
+hostname validation through the same route, negotiating TLS 1.2 with
+`ECDHE-RSA-AES256-GCM-SHA384`. Firmware 12718 then completed TLS and the `/srwe`
+WebSocket upgrade. This isolates the observed incompatibility to the ECDSA
+certificate/handshake path rather than routing, DNS, TLS version, certificate
+pinning or a required CA root. It does not identify the precise ECDSA failure.
+The current Let's Encrypt certificate hierarchy is documented in its
+[published chain information](https://letsencrypt.org/certificates/).
+
+A subsequent test replaced the issued chain with a ten-year, self-signed
+RSA-2048 certificate matching the Home Assistant generator. The device again
+completed TLS 1.2 and the WebSocket upgrade and returned a valid 145-byte
+telemetry response. Its original server settings and stable control configuration
+were restored and verified afterward.
+
+The RSA connection remained silent until the server sent the statically identified,
+read-only telemetry request. The device answered in about 160 ms with exactly 145
+binary bytes. That message parsed with the existing Construct `TELEMETRY_FIELDS`
+layout and contained the expected model/firmware plus plausible voltage and
+frequency. It is the BLE telemetry structure without BLE framing, payload padding
+or CRC. No message was observed to be pushed spontaneously during the passive
+window. This confirms local Wi-Fi metrics and request/response behavior.
+
+The WebSocket `GETCFG` response is the firmware's exact 128-byte internal
+control structure. Its four schedule records are 7-byte packed structures at
+offsets 76, 83, 90 and 97. They use the same active/mode/start/stop representation
+as the Bluetooth configuration projection. The write command contains an
+offset, length and replacement data. Firmware explicitly validates a 7-byte
+write beginning at each schedule offset before copying and persisting it.
+
+A bounded test read all schedules, changed the mode of inactive slot 4 using
+that single-record operation, checked the acknowledgement and full schedule
+readback, then restored the original record and verified it again. A final
+authenticated Bluetooth read confirmed the original stable configuration and
+server settings. This is the control operation exposed by the library and Home
+Assistant Wi-Fi mode; arbitrary configuration writes are not exposed.
+
+Temporary DMZ relays, tunnels and listeners were stopped after restoration.
+Hostnames, addresses, credentials, certificate material, original settings and
+captures remain private and ignored. The public library, CLI listener and Home
+Assistant integration contain no private endpoint, device or capture details.

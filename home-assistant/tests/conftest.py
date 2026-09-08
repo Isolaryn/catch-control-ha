@@ -23,8 +23,8 @@ async def hass(tmp_path):
 @pytest.fixture
 def entry():
     return ConfigEntry(
-        domain='catch_control', title='Test Catch', version=1, minor_version=1,
-        data={'address': 'AA:BB:CC:DD:EE:FF', 'serial': 4242, 'firmware': 12718},
+        domain='catch_control', title='Test Catch', version=2, minor_version=1,
+        data={'address': 'AA:BB:CC:DD:EE:FF', 'transport': 'bluetooth', 'serial': 4242, 'firmware': 12718},
         options={'password': 'test-password', 'scan_interval': 30},
         source='user', unique_id='10004-4242',
         discovery_keys=MappingProxyType({}), subentries_data=None,

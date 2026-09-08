@@ -1,19 +1,38 @@
 {
-  "title": "CATCH Control Bluetooth",
+  "title": "CATCH Control",
   "config": {
     "flow_title": "{name}",
     "step": {
       "user": {
-        "title": "Connect to CATCH Control",
-        "description": "Close Configurator on your phone. Choose a discovered device or enter its Bluetooth address. A password is optional for monitoring; provide the local device password to enable schedule changes.",
+        "title": "Choose local connection",
+        "description": "Bluetooth connects for every poll. Wi-Fi runs a TLS WebSocket server in Home Assistant and uses Bluetooth once to point the CATCH at it.",
+        "data": {
+          "transport": "Connection mode"
+        }
+      },
+      "bluetooth_device": {
+        "title": "Connect over Bluetooth",
+        "description": "Close Configurator on your phone. A password is optional for monitoring and required for schedule changes.",
         "data": {
           "address": "Bluetooth address",
           "password": "Device password"
         }
+      },
+      "wifi": {
+        "title": "Connect over local Wi-Fi",
+        "description": "Home Assistant will create and retain a long-lived RSA certificate, listen on the selected port, and configure both device server slots over authenticated Bluetooth. The advertised host must resolve to this Home Assistant system from the device VLAN.",
+        "data": {
+          "address": "Bluetooth address used for setup",
+          "password": "Device password",
+          "server_host": "Home Assistant host advertised to the device",
+          "server_port": "TLS WebSocket port",
+          "bind_host": "Local listen address"
+        }
       }
     },
     "error": {
-      "cannot_connect": "Unable to connect. Check Bluetooth range, close the phone app, and verify the device address. Password-based controls require 2CH firmware 12718.",
+      "cannot_connect": "Unable to connect. Check Bluetooth range, close the phone app, and verify the device address.",
+      "invalid_host": "Enter a DNS name or IPv4 address of at most 29 characters without a scheme, path, or port.",
       "invalid_auth": "The local device password was not accepted."
     },
     "abort": {
@@ -25,17 +44,22 @@
     "step": {
       "init": {
         "title": "CATCH Control options",
-        "description": "Leave the password blank to keep it. Clear the password to return to monitoring only. Times in schedules use the device clock.",
+        "description": "Wi-Fi endpoint changes are authenticated and applied over Bluetooth during reload. Times use the device clock.",
         "data": {
           "scan_interval": "Polling interval (seconds)",
           "password": "New device password",
-          "clear_password": "Clear stored password (monitoring only)"
+          "clear_password": "Clear stored password",
+          "server_host": "Home Assistant host advertised to the device",
+          "server_port": "TLS WebSocket port",
+          "bind_host": "Local listen address"
         }
       }
     },
     "error": {
-      "cannot_connect": "Unable to connect to the configured Catch. Close Configurator and check Bluetooth availability.",
-      "invalid_auth": "The local device password was not accepted."
+      "cannot_connect": "Unable to connect to the configured Catch over Bluetooth.",
+      "invalid_auth": "The local device password was not accepted.",
+      "invalid_host": "Enter a DNS name or IPv4 address of at most 29 characters without a scheme, path, or port.",
+      "password_required": "A stored device password is required to change the Wi-Fi endpoint."
     }
   }
 }

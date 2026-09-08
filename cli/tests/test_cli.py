@@ -9,16 +9,30 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from catch_control_cli.cli import main, parse_time, run
+from catch_control.network import WifiServerSettings
 
 
 class CliTests(unittest.IsolatedAsyncioTestCase):
     def test_invalid_arguments_fail_before_bluetooth(self):
-        for argv in [['read', '--apply'], ['watch', '--interval', 'nan'], ['read', '--count', '1'], ['schedule', '--slot', '4']]:
+        for argv in [
+            ['read', '--apply'], ['watch', '--interval', 'nan'], ['read', '--count', '1'],
+            ['schedule', '--slot', '4'], ['wifi-listen'], ['read', '--cert', 'cert.pem'],
+            ['wifi-setup', '--host', 'ha.example'], ['read', '--port', '8444'],
+            ['wifi-listen', '--cert', 'cert.pem', '--key', 'key.pem', '--port', '443'],
+        ]:
             with self.subTest(argv=argv), patch('sys.argv', ['catch-control', *argv]), redirect_stderr(io.StringIO()), patch('catch_control.ble.discover') as discover:
                 with self.assertRaises(SystemExit) as error:
                     main()
                 self.assertEqual(error.exception.code, 2)
                 discover.assert_not_called()
+
+    async def test_wifi_listener_routes_without_bluetooth_discovery(self):
+        args = SimpleNamespace(command='wifi-listen')
+        with patch('catch_control_cli.wifi_server.listen', new_callable=AsyncMock) as listen, \
+             patch('catch_control.ble.discover') as discover:
+            await run(args)
+        listen.assert_awaited_once_with(args)
+        discover.assert_not_called()
 
     def test_time_parser(self):
         self.assertEqual(parse_time('14:05'), 845)
@@ -54,6 +68,33 @@ class CliTests(unittest.IsolatedAsyncioTestCase):
                 path.chmod(0o644)
                 with self.assertRaisesRegex(ValueError, 'only to its owner'):
                     await run(args)
+
+    async def test_wifi_setup_previews_verified_endpoint_plan(self):
+        client = AsyncMock()
+        client.__aenter__.return_value = client
+        before = WifiServerSettings('old.example', 443, 'backup.example', 443)
+        after = WifiServerSettings('ha.example', 8443, 'ha.example', 8443)
+        plan = SimpleNamespace(summary=lambda: {
+            'changed': True, 'before': before, 'after': after,
+        })
+        client.plan_websocket_server.return_value = plan
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'password'
+            path.write_text('test-password\n')
+            path.chmod(0o600)
+            args = SimpleNamespace(
+                command='wifi-setup', scan_timeout=1, address=None, timeout=1,
+                password_file=str(path), host='ha.example', port=8443, apply=False,
+            )
+            output = io.StringIO()
+            with patch('catch_control.ble.discover', return_value=[(SimpleNamespace(address='test'), None)]), patch(
+                'catch_control.ble.CatchClient', return_value=client
+            ), redirect_stdout(output):
+                await run(args)
+        decoded = json.loads(output.getvalue())
+        self.assertEqual(decoded['after']['primary_host'], 'ha.example')
+        client.plan_websocket_server.assert_awaited_once_with('ha.example', 8443, password='test-password')
+        client.apply_websocket_server.assert_not_awaited()
 
 
 if __name__ == '__main__':

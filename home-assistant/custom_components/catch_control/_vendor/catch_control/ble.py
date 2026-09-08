@@ -8,10 +8,14 @@ from bleak import BleakClient, BleakScanner
 from .configuration import (
     Schedule, SchedulePlan, WriteVerificationError, plan_schedule as make_schedule_plan,
 )
+from .network import (
+    GET_WIFI_SETTINGS, WifiServerPlan, decode_server_settings,
+    plan_websocket_server as make_server_plan,
+)
 
 from .protocol import (
     CHARACTERISTIC_UUID, SERVICE_UUID, MODEL_2CH, IDENTITY, LIVE_DATA, GET_CONFIGURATION,
-    FrameBuffer, ProtocolError, frame_opcode, decode_identity, decode_telemetry,
+    FrameBuffer, ProtocolError, frame_opcode, decode_identity, decode_telemetry, parse_frame,
     decode_configuration, read_request,
 )
 
@@ -233,3 +237,31 @@ class CatchClient:
         if (identity['serial'], identity['firmware']) != (self.identity.serial, self.identity.firmware):
             raise ProtocolError("Configuration identity differs from the connected device")
         return data
+
+    async def wifi_server_settings(self):
+        """Read only the configured server names and ports; Wi-Fi credentials stay hidden."""
+        return decode_server_settings(await self._request(GET_WIFI_SETTINGS))
+
+    async def plan_websocket_server(self, host: str, port: int, *, password: str) -> WifiServerPlan:
+        await self.authenticate(password=password)
+        return make_server_plan(await self._request(GET_WIFI_SETTINGS), host, port)
+
+    async def apply_websocket_server(self, plan: WifiServerPlan, *, password: str) -> dict:
+        """Authenticate, compare a fresh snapshot, write once, and verify readback."""
+        async with self._configuration_lock:
+            await self.authenticate(password=password)
+            current = parse_frame(await self._request(GET_WIFI_SETTINGS), GET_WIFI_SETTINGS).payload
+            if current != plan._original_payload:
+                raise ConfigurationConflict("Wi-Fi settings changed after planning; no write was sent")
+            if not plan.changed:
+                return {**plan.summary(), "verified": True, "written": False}
+            try:
+                await self._write_configuration(plan._packet())
+                readback = parse_frame(await self._request(GET_WIFI_SETTINGS), GET_WIFI_SETTINGS).payload
+                if readback != plan._updated_payload:
+                    raise WriteVerificationError("Wi-Fi settings readback differs from the requested endpoint")
+            except Exception:
+                raise WriteVerificationError(
+                    "Server endpoint save could not be fully verified and may have taken effect; read settings before retrying"
+                ) from None
+            return {**plan.summary(), "verified": True, "written": True}

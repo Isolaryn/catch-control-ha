@@ -13,7 +13,7 @@ from .checksum import crc16
 from .enums import ControlMode, ServerStatus, enum_name
 from .schemas import (
     FRAME, FRAME_SIZE, PAYLOAD_SIZE, IDENTITY_PAYLOAD, TELEMETRY_PAYLOAD,
-    CONFIGURATION_READ_PAYLOAD,
+    CONFIGURATION_READ_PAYLOAD, TELEMETRY_FIELDS,
 )
 
 MODEL_2CH = 10004
@@ -91,8 +91,7 @@ def decode_configuration(frame: bytes) -> dict:
     return result
 
 
-def decode_telemetry(frame: bytes) -> dict:
-    data = _parse_payload(TELEMETRY_PAYLOAD, frame, LIVE_DATA)
+def _telemetry_result(data) -> dict:
     identity = data.identity
     if identity.model != MODEL_2CH:
         raise ProtocolError(f"Telemetry layout for model {identity.model} is not supported")
@@ -122,6 +121,24 @@ def decode_telemetry(frame: bytes) -> dict:
         "wifi_rssi_dbm": data.wifi_rssi_dbm,
         "cloud_tethered_raw": data.cloud_tethered_raw,
     }
+
+
+def decode_telemetry_payload(payload: bytes) -> dict:
+    """Decode the 145-byte telemetry structure shared by BLE and WebSocket."""
+    try:
+        if len(payload) != TELEMETRY_FIELDS.sizeof():
+            raise ProtocolError(
+                f"Expected {TELEMETRY_FIELDS.sizeof()} telemetry bytes, received {len(payload)}"
+            )
+        data = TELEMETRY_FIELDS.parse(payload)
+    except (ConstructError, TypeError) as exc:
+        raise ProtocolError(f"Invalid Catch telemetry payload: {exc}") from exc
+    return _telemetry_result(data)
+
+
+def decode_telemetry(frame: bytes) -> dict:
+    body = parse_frame(frame, LIVE_DATA)
+    return decode_telemetry_payload(body.payload[:TELEMETRY_FIELDS.sizeof()])
 
 
 class FrameBuffer:

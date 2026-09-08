@@ -1,6 +1,6 @@
 # Protocol and validation notes
 
-Updated 2026-09-07. Public notes exclude device identifiers, credentials, raw
+Updated 2026-09-08. Public notes exclude device identifiers, credentials, raw
 captures and third-party APK/firmware contents. Detailed private investigation
 artifacts remain outside version control.
 
@@ -53,10 +53,12 @@ read and disabled.
 See [the Wi-Fi investigation](WIFI_RESEARCH.md) for the follow-up transport,
 connectivity and extended diagnostic findings, including an offline decoder.
 
-Firmware uses an outbound secure WebSocket client. A direct LAN control API
-has not been established. Self-hosted server compatibility and TLS trust
-behavior have not been tested. No DNS redirection or TLS changes are needed
-for the working BLE client.
+Firmware uses an outbound secure WebSocket client at
+`wss://<configured-host>:<port>/srwe`. RSA TLS, certificate verification mode,
+telemetry and configuration reads, and one-record schedule writes were verified
+against an owner-controlled endpoint. The implementation runs a server because
+the device initiates the connection. It sets both server slots over authenticated
+Bluetooth; no DNS redirection or public CA is required.
 
 The owner confirmed the device's VLAN has no internet access. BLE reads and
 authenticated schedule saves still worked. The firewall was not independently
@@ -71,18 +73,20 @@ advancing clock. An inactive schedule was changed, readback verified, restored
 and verified again. Other settings matched the baseline and the operating mode
 remained unchanged. This was repeated on the owner-confirmed internet-blocked
 VLAN. No enabled schedule, electrical parameter, firmware or network rule was
-changed by those tests. Physical load switching was not tested.
+changed by those tests. The same inactive schedule change and restoration was
+then verified over WSS. Physical load switching was not tested.
 
 Software tests cover CRC/framing, fragmentation, signed telemetry, omitted
 credentials, wrong passwords, field preservation, stale plans, invalid windows,
 no-op avoidance, unacknowledged/ignored saves and host-managed connections. CLI
 tests cover argument validation, JSON, private files and preview behavior.
-HA tests target 2026.9.1 with simulated Bluetooth responses.
+HA tests target 2026.9.1 with simulated Bluetooth and WSS responses, including
+its generated RSA certificate and TLS listener.
 
 Remaining work includes hardware validation through HA adapters/proxies,
 physical load switching, other models/firmware, temporary one-shot overrides,
-overnight schedules, energy-counter reset semantics and optional local Wi-Fi
-control. These capabilities are not claimed as implemented or tested.
+overnight schedules, energy-counter reset semantics and HA-host hardware
+validation of Wi-Fi mode. These capabilities are not claimed as tested.
 
 ## HA setup timeout follow-up (0.2.1)
 

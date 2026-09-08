@@ -27,7 +27,7 @@ def tls_context(cert, key):
     return context
 
 
-def observer(context, port=8443, report=emit):
+def observer(context, port=8443, report=emit, handshake_timeout=30):
     """Bind only loopback; an explicitly configured SSH forward provides access."""
     # Library exceptions/debug output may contain HTTP headers or close reasons.
     logger = logging.getLogger("catch.passive_wss.transport")
@@ -60,13 +60,13 @@ def observer(context, port=8443, report=emit):
 
     return serve(receive, "127.0.0.1", port, ssl=context,
                  process_request=request, compression=None,
-                 ping_interval=None, close_timeout=3, open_timeout=10,
+                 ping_interval=None, close_timeout=3, open_timeout=handshake_timeout,
                  max_size=65536, max_queue=4, logger=logger, server_header=None)
 
 
 async def run(args):
     context = tls_context(args.cert, args.key)
-    async with observer(context, args.port):
+    async with observer(context, args.port, handshake_timeout=args.handshake_timeout):
         emit("listening", bind="127.0.0.1", port=args.port, duration_seconds=args.duration)
         await asyncio.sleep(args.duration)
     emit("stopped")
@@ -78,9 +78,12 @@ def main():
     parser.add_argument("--key", required=True, help="PEM private key; keep in ignored .secrets/")
     parser.add_argument("--port", type=int, default=8443)
     parser.add_argument("--duration", type=int, default=600, help="Stop after this many seconds")
+    parser.add_argument("--handshake-timeout", type=int, default=30, help="Seconds allowed for TLS and WebSocket opening")
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535 or not 1 <= args.duration <= 3600:
         parser.error("port must be 1024..65535 and duration 1..3600 seconds")
+    if not 1 <= args.handshake_timeout <= 120:
+        parser.error("handshake-timeout must be 1..120 seconds")
     try:
         asyncio.run(run(args))
     except KeyboardInterrupt:

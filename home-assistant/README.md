@@ -1,56 +1,72 @@
-# CATCH Control Bluetooth for Home Assistant
+# CATCH Control for Home Assistant
 
-Unofficial custom integration for CATCH Control 2CH. Uses local Bluetooth;
-the device does not need internet access. Requires **Home Assistant 2026.9.1
-or newer**. Automated tests target 2026.9.1.
+Unofficial custom integration for CATCH Control 2CH. It operates locally over
+Bluetooth or over a device-initiated TLS WebSocket; the CATCH does not need
+internet access. Requires **Home Assistant 2026.9.1 or newer**. Automated tests
+target 2026.9.1.
 
 ## Install
 
-1. Download `catch-control-home-assistant-0.2.1.zip` from
+1. Download `catch-control-home-assistant-0.3.0.zip` from
    [GitHub releases](https://github.com/Isolaryn/catch-control-ha/releases).
-2. Extract into your Home Assistant **configuration directory**. The result
-   must be `custom_components/catch_control/manifest.json` alongside the other
-   integration files. On HA OS this directory is normally `/config`. Alternatively
-   copy `home-assistant/custom_components/catch_control` from this checkout.
-3. Restart HA. Ensure its Bluetooth integration has a working local adapter or
-   **connectable** Bluetooth proxy within range of the CATCH.
-4. Close/disconnect Configurator on your phone. Go to **Settings → Devices &
-   services → Add integration → CATCH Control Bluetooth**, or use its discovered
-   device card. Select the device or enter its Bluetooth address.
-5. Enter the local device settings password to enable schedule changes, or leave
-   it blank for monitoring. This is not a cloud account password.
+2. Extract it into the Home Assistant configuration directory. The result must
+   include `custom_components/catch_control/manifest.json`. On HA OS this is
+   normally below `/config`.
+3. Restart HA and add **CATCH Control** from Settings → Devices & services.
+4. Close Configurator on the phone before setup or any later endpoint change.
 
-HA may download dependencies at first setup; the device's IoT VLAN can remain
-isolated. This is a manual custom integration, not a HACS or HA Core listing.
-The shared [HA Bluetooth APIs](https://developers.home-assistant.io/docs/core/bluetooth/api/)
-select the adapter/proxy. A macOS CoreBluetooth UUID is not portable to a Linux
-HA host: use the device discovered by HA.
+Existing 0.2.x entries migrate to Bluetooth mode. This is a manually installed
+custom integration, not a HACS or HA Core listing.
 
-The integration polls every 30 seconds and disconnects between transactions.
-Options allow 15–3600 seconds. Temporarily disable the integration when you need
-an uninterrupted Configurator session.
+## Connection modes
 
-If telemetry succeeds but configuration fails, sensors remain available while
-schedule controls become unavailable. Configuration is read again on the next
-poll; successful readback restores the controls. Old schedules are not shown
-as fresh data. Connection establishment allows 30 seconds, individual reads
-10 seconds, and disconnect cleanup at most 5 seconds.
+### Bluetooth
 
-### Troubleshooting a configuration timeout
+HA polls through its shared Bluetooth manager, using a local adapter or a
+**connectable** Bluetooth proxy. It connects and disconnects for each transaction.
+Select a discovered device or enter its address. A password is optional for
+monitoring and required for schedule changes.
 
-Enable debug logging from the integration's menu, reproduce the problem, then
-disable debug logging to download the log. Version 0.2.1 adds operation numbers,
-elapsed time, sent chunk counts, received fragment/byte counts and valid frame
-counts. It does not log packet contents or passwords. Opcode 1 is configuration;
-0 is identity and 3 is telemetry. Diagnostics include the failed read stage and
-whether fresh configuration is available.
+A macOS CoreBluetooth UUID is not portable to a Linux HA host. Use the address
+that HA discovers. Temporarily disable the integration when Configurator needs
+an uninterrupted Bluetooth session.
 
-A `CancelledError` during Reload or restart means HA cancelled the in-flight
-operation. Check earlier errors for the original failure. One reported setup
-configuration timeout cleared after restarting HA; its exact cause remains
-unconfirmed. A restart is a recovery option if a normal reload does not help.
+### Wi-Fi WebSocket server
 
-## Entities
+Wi-Fi mode keeps normal control traffic on the IoT LAN:
+
+1. Choose **Wi-Fi WebSocket server** during setup.
+2. Select the device over Bluetooth and supply its local settings password.
+3. Enter a DNS name or IPv4 address that resolves to the HA host from the device
+   VLAN, an unused TCP port from 1024–32767, and the local bind address.
+4. Allow the device to initiate TCP connections to that HA address and port.
+
+HA starts its TLS listener first, then uses authenticated Bluetooth to set and
+verify both device server slots. After that first setup, polling and schedule
+changes use `wss://<host>:<port>/srwe`; normal restarts do not require Bluetooth.
+Changing the advertised host or port in integration options performs another
+authenticated Bluetooth update during reload.
+
+Each Wi-Fi device currently needs a distinct listen port. The advertised host
+must contain only DNS/IPv4 hostname characters and fit the firmware's 29-byte
+field. Do not include `https://`, `wss://`, a path, or a port in that field.
+
+On first Wi-Fi startup, HA generates a 2048-bit RSA self-signed certificate and
+retains it for ten years under `.storage/catch_control`. The key file is created
+with mode 0600. Firmware 12718 was observed to require RSA TLS compatibility but
+to use `VERIFY_NONE` for this connection, so no public CA or private root is
+needed and changing the certificate does not require changing the device. The
+firmware does not authenticate its server certificate; restrict the listener to
+the intended IoT network and protect the HA host.
+
+The previous primary and secondary server names and ports are retained in the
+config entry when Wi-Fi mode first configures the device. Removing the entry does
+not currently restore them automatically. Change the endpoint deliberately
+before removing HA if the device should reconnect somewhere else.
+
+## Entities and operation
+
+The integration polls every 30 seconds; options allow 15–3600 seconds.
 
 | Entities | Meaning |
 | --- | --- |
@@ -59,21 +75,24 @@ unconfirmed. A restart is a recovery option if a normal reload does not help.
 | 4 selects | Each schedule's operating mode |
 | 8 time controls | Each schedule's start and stop |
 
-Schedule controls are configuration entities. They remain unavailable until a
-password is configured and firmware 12718 is detected. Monitoring works without
-a password. Energy counters are omitted from HA statistics because their signed/
-reset behavior is unverified. Reported server status is a device value, not proof
-of current cloud connectivity.
+Schedule controls are configuration entities. Firmware 12718 is required. In
+Bluetooth mode they also require the stored password. Wi-Fi mode writes exactly
+one validated 7-byte schedule record, checks that all schedules are still fresh,
+and verifies all schedules afterward.
 
 **The switches enable schedules; they do not directly switch a load immediately.**
 CT channels measure power and are not independently controlled relay outputs.
 Physical load switching has not been validated by this project.
 
+If telemetry succeeds but configuration fails, sensors remain available while
+schedule controls become unavailable. Configuration is retried on the next poll.
+A failed write is never automatically repeated because it may already have taken
+effect.
+
 ## Combined schedule action
 
 `catch_control.set_schedule` changes all fields in one verified save. Target the
-enabled switch for the desired slot; substitute your actual entity ID below.
-This example keeps schedule 4 disabled:
+enabled switch for the desired slot. This example keeps schedule 4 disabled:
 
 ```yaml
 action: catch_control.set_schedule
@@ -86,31 +105,26 @@ data:
   stop: "14:05"
 ```
 
-Modes: `default`, `export`, `turn_on`, `turn_off`, `top_up`, `voltage`, `frequency`.
-An active schedule cannot use `default` or cross midnight. Times are whole
-minutes, 00:00–23:59 in device local time. Newly overlapping/touching active
-windows are rejected. Use the combined action or disable the slot first if
-editing a single time would create an invalid intermediate window.
+Modes: `default`, `export`, `turn_on`, `turn_off`, `top_up`, `voltage`,
+`frequency`. An active schedule cannot use `default` or cross midnight. Times
+are whole minutes in device local time. Newly overlapping or touching active
+windows are rejected. Use the combined action or disable a slot first if editing
+one field would create an invalid intermediate window.
 
-The library reads again before saving, preserves other fields and verifies
-readback afterward. It never retries a save automatically. On an uncertain
-outcome, refresh/read configuration before trying again. Avoid simultaneous
-configuration editors.
+## Credentials, troubleshooting and development
 
-## Credentials, updates and development
+The password is stored in config-entry options in HA's local `.storage`. Protect
+storage and backups. Options do not prefill it: a blank replacement keeps the
+current password. Diagnostics omit credentials, device address, serial number,
+raw packets, server host, and certificate details.
 
-The password is stored in config-entry options in HA's local `.storage`.
-Protect storage and backups. Options do not prefill the password: leaving a
-replacement blank keeps it; **Clear password** returns to monitoring only.
-Diagnostics omit credentials, device address and serial number.
+For Bluetooth timeouts, enable debug logging, reproduce the operation, and
+download diagnostics. Debug logs contain operation numbers and timing but no
+packet contents. A `CancelledError` during reload or restart means HA cancelled
+an in-flight operation; check earlier errors for the original failure.
 
-To update, back up HA configuration, replace the integration directory and
-restart. To remove, delete its integration entry in Settings, remove the custom
-component directory and restart.
-
-The library is bundled under `_vendor` because it is not published to PyPI.
-Edit the canonical `library/src/catch_control` source and run these from the
-repository root:
+The library is bundled under `_vendor`. Edit `library/src/catch_control`, then
+build and test from the repository root:
 
 ```sh
 uv run python tools/build_ha.py
@@ -118,6 +132,7 @@ docker build -f home-assistant/Dockerfile.test -t catch-control-ha-test home-ass
 docker run --rm --mount "type=bind,source=$PWD/home-assistant,target=/workspace,readonly" catch-control-ha-test
 ```
 
-Tests use real HA classes and simulated device responses, without Bluetooth
-hardware access. Library hardware validation was performed on macOS. Deployment
-through an HA adapter/proxy still needs a hardware check on your installation.
+Tests use real HA classes and synthetic device responses. BLE and WSS telemetry,
+configuration, and a reversible inactive-schedule edit were also validated on
+firmware 12718. The HA-host Wi-Fi deployment still needs a hardware check on the
+target installation.

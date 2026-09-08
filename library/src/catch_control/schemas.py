@@ -104,10 +104,8 @@ def threshold_control(threshold_type):
     )
 
 
-def configuration_fields(credential_field):
+def control_configuration_prefix(credential_field):
     return Struct(
-        "identity" / IDENTITY_FIELDS,
-        "_dummy" / Byte,
         "device_time" / DEVICE_TIME,
         credential_field,
         "ct_ratio" / Int16ul,
@@ -118,6 +116,12 @@ def configuration_fields(credential_field):
         "modbus_baud" / Int16ul,
         "modbus_stopbits_raw" / Byte,
         "modbus_parity_raw" / Byte,
+    )
+
+
+def control_configuration_fields(credential_field):
+    return Struct(
+        *control_configuration_prefix(credential_field).subcons,
         "overrides" / Array(4, SCHEDULE_OVERRIDE),
         "meter_type_raw" / Int32sl,
         "meter_export_limit" / Int32sl,
@@ -135,7 +139,25 @@ def configuration_fields(credential_field):
         "update_time_raw" / Byte,
     )
 
+
+def configuration_fields(credential_field):
+    return Struct(
+        "identity" / IDENTITY_FIELDS,
+        "_dummy" / Byte,
+        *control_configuration_fields(credential_field).subcons,
+    )
+
 CONFIGURATION_READ_FIELDS = configuration_fields(Padding(16))
 CONFIGURATION_READ_PAYLOAD = IfThenElse(
     this._parsing, Padded(PAYLOAD_SIZE, CONFIGURATION_READ_FIELDS), Error,
+)
+
+# The WebSocket GETCFG response is the device's internal 128-byte control
+# structure. Credentials are consumed without being exposed to callers.
+WIFI_CONFIGURATION_SIZE = 128
+WIFI_CONFIGURATION_SCHEDULE_OFFSET = control_configuration_prefix(Padding(16)).sizeof()
+WIFI_CONFIGURATION_SCHEDULE_SIZE = SCHEDULE_OVERRIDE.sizeof()
+WIFI_CONFIGURATION_READ_FIELDS = Struct(
+    *control_configuration_fields(Padding(16)).subcons,
+    Terminated,
 )

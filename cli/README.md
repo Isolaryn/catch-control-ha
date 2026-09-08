@@ -22,6 +22,33 @@ The Wi-Fi IP is not a Bluetooth identifier.
 settings unchanged. Configuration output omits the credential. Watch stops on
 connection failure rather than silently reconnecting.
 
+## Wi-Fi telemetry listener
+
+Preview the authenticated Bluetooth endpoint change, then repeat with `--apply`
+to set and verify both device server slots:
+
+```sh
+catch-control wifi-setup --host ha.example.test --port 8443 \
+  --password-file .secrets/catch-control.password
+catch-control wifi-setup --host ha.example.test --port 8443 \
+  --password-file .secrets/catch-control.password --apply
+```
+
+After configuring the device's server host and port, the CLI can terminate TLS,
+accept `/srwe`, and request telemetry over the same local WebSocket protocol used
+by the Home Assistant integration:
+
+```sh
+catch-control wifi-listen --bind 0.0.0.0 --port 8443 \
+  --cert .secrets/server-cert.pem --key .secrets/server-key.pem \
+  --interval 5 --count 12
+```
+
+The certificate must use an RSA key for the tested firmware. Protect its private
+key. The CLI logs decoded telemetry only and suppresses HTTP/WebSocket handshake
+headers. Home Assistant mode can generate and retain a compatible certificate
+and configure the device endpoint over Bluetooth.
+
 ## Schedule changes
 
 Store your local device password in `.secrets/catch-control.password`, use

@@ -1,19 +1,25 @@
 from copy import deepcopy
 import asyncio
 from datetime import time
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from aiohttp import ClientSession, WSMsgType
 import pytest
 import voluptuous as vol
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import UpdateFailed
+from cryptography import x509
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 
 from custom_components.catch_control import async_setup_entry, async_unload_entry
 from custom_components.catch_control._vendor.catch_control.protocol import Identity
 from custom_components.catch_control._vendor.catch_control.configuration import AuthenticationError
+from custom_components.catch_control._vendor.catch_control.network import WifiServerSettings
 from custom_components.catch_control.config_flow import CatchConfigFlow, CatchOptionsFlow
 from custom_components.catch_control.coordinator import CatchCoordinator
 from custom_components.catch_control.diagnostics import async_get_config_entry_diagnostics
@@ -21,6 +27,7 @@ from custom_components.catch_control.sensor import CatchSensor, SENSORS
 from custom_components.catch_control.switch import ScheduleSwitch, schedule_minutes
 from custom_components.catch_control.select import ScheduleMode
 from custom_components.catch_control.time import ScheduleTime
+from custom_components.catch_control.wifi_server import CatchWifiServer, ensure_certificate
 
 IDENTITY = Identity(10004, 4242, 12718)
 SCHEDULE = {'active_raw': 0, 'mode_raw': 3, 'start_minutes': 840, 'stop_minutes': 845}
@@ -69,6 +76,27 @@ async def test_schedule_uses_current_values_and_publishes_readback(hass, entry):
     assert args.kwargs == {'password': 'test-password'}
     client.apply_schedule.assert_awaited_once_with(client.plan_schedule.return_value, password='test-password')
     assert coordinator.data['configuration'] == final
+
+
+async def test_wifi_coordinator_reads_and_writes_over_websocket(hass, entry):
+    entry.__dict__['data'] = {**entry.data, 'transport': 'wifi'}
+    session = AsyncMock()
+    session.telemetry.return_value = deepcopy(DATA['telemetry']) | {
+        'model': 10004, 'serial': 4242, 'firmware': 12718,
+    }
+    session.configuration.return_value = deepcopy(DATA['configuration'])
+    server = SimpleNamespace(async_session=AsyncMock(return_value=session), async_discard=AsyncMock())
+    coordinator = CatchCoordinator(hass, entry, wifi_server=server)
+    assert await coordinator._async_update_data() == {
+        'telemetry': session.telemetry.return_value,
+        'configuration': DATA['configuration'],
+    }
+    coordinator.password = ''
+    assert coordinator.can_write
+    await coordinator.async_edit_schedule(4, mode=4)
+    session.plan_schedule.assert_awaited_once()
+    session.apply_schedule.assert_awaited_once_with(session.plan_schedule.return_value)
+    server.async_discard.assert_not_awaited()
 
 
 @pytest.mark.parametrize('failure', [TimeoutError('secret backend data'), ValueError('Invalid window')])
@@ -144,10 +172,12 @@ async def test_user_flow(hass):
     flow = CatchConfigFlow()
     flow.hass = hass
     flow.context = {'source': 'user'}
+    result = await flow.async_step_user()
+    assert result['type'] == FlowResultType.FORM
     with patch('custom_components.catch_control.config_flow.probe', return_value=IDENTITY):
-        result = await flow.async_step_user({'address': ' AA:BB:CC:DD:EE:FF ', 'password': 'test-password'})
+        result = await flow.async_step_bluetooth_device({'address': ' AA:BB:CC:DD:EE:FF ', 'password': 'test-password'})
     assert result['type'] == FlowResultType.CREATE_ENTRY
-    assert result['data'] == {'address': 'AA:BB:CC:DD:EE:FF', 'serial': 4242, 'firmware': 12718}
+    assert result['data'] == {'address': 'AA:BB:CC:DD:EE:FF', 'transport': 'bluetooth', 'serial': 4242, 'firmware': 12718}
     assert result['options']['password'] == 'test-password'
     assert flow.unique_id == '10004-4242'
 
@@ -157,12 +187,32 @@ async def test_invalid_password_flow_and_unsupported_discovery(hass):
     flow.hass = hass
     flow.context = {'source': 'user'}
     with patch('custom_components.catch_control.config_flow.probe', side_effect=AuthenticationError('no match')), patch('custom_components.catch_control.config_flow.bluetooth.async_discovered_service_info', return_value=[]):
-        result = await flow.async_step_user({'address': 'test', 'password': 'wrong'})
+        result = await flow.async_step_bluetooth_device({'address': 'test', 'password': 'wrong'})
     assert result['type'] == FlowResultType.FORM
     assert result['errors'] == {'base': 'invalid_auth'}
     assert 'wrong' not in repr(result)
     result = await flow.async_step_bluetooth(SimpleNamespace(manufacturer_data={0: b'\x27\x15'}))
     assert result['reason'] == 'not_supported'
+
+
+async def test_wifi_flow_requires_authenticated_bluetooth_setup(hass):
+    flow = CatchConfigFlow()
+    flow.hass = hass
+    flow.context = {'source': 'user'}
+    with patch('custom_components.catch_control.config_flow.probe', return_value=IDENTITY) as probe:
+        result = await flow.async_step_wifi({
+            'address': ' AA:BB:CC:DD:EE:FF ',
+            'password': 'test-password',
+            'server_host': 'ha.example.test',
+            'server_port': 8443,
+            'bind_host': '0.0.0.0',
+        })
+    assert result['type'] == FlowResultType.CREATE_ENTRY
+    assert result['data']['transport'] == 'wifi'
+    assert result['data']['server_host'] == 'ha.example.test'
+    assert result['data']['endpoint_configured'] is False
+    assert result['options']['password'] == 'test-password'
+    probe.assert_awaited_once_with(hass, 'AA:BB:CC:DD:EE:FF', 'test-password')
 
 
 @pytest.mark.parametrize('clear,expected', [(False, 'test-password'), (True, '')])
@@ -176,6 +226,36 @@ async def test_options_keep_or_clear_password(hass, entry, clear, expected):
     probe.assert_awaited_once_with(hass, entry.data['address'], expected)
 
 
+async def test_wifi_options_validate_endpoint_change_over_bluetooth(hass, entry):
+    entry.__dict__['data'] = {
+        **entry.data,
+        'transport': 'wifi',
+        'server_host': 'old.example',
+        'server_port': 8443,
+        'bind_host': '0.0.0.0',
+        'endpoint_configured': True,
+    }
+    flow = CatchOptionsFlow()
+    flow.hass = hass
+    flow.handler = entry.entry_id
+    with patch.object(hass.config_entries, 'async_get_known_entry', return_value=entry), patch(
+        'custom_components.catch_control.config_flow.probe', return_value=IDENTITY
+    ) as probe:
+        result = await flow.async_step_init({
+            'scan_interval': 45,
+            'clear_password': False,
+            'password': '',
+            'server_host': 'new.example',
+            'server_port': 9443,
+            'bind_host': '192.0.2.10',
+        })
+    assert result['type'] == FlowResultType.CREATE_ENTRY
+    assert result['data']['server_host'] == 'new.example'
+    assert result['data']['server_port'] == 9443
+    assert entry.data['server_host'] == 'old.example'
+    probe.assert_awaited_once_with(hass, entry.data['address'], 'test-password')
+
+
 async def test_setup_unload_and_diagnostics(hass, entry):
     entry._async_set_state(hass, ConfigEntryState.SETUP_IN_PROGRESS, None)
     with patch('custom_components.catch_control.coordinator.client_for', return_value=fake_client()), patch.object(hass.config_entries, 'async_forward_entry_setups', new_callable=AsyncMock) as forward, patch.object(hass.config_entries, 'async_unload_platforms', new_callable=AsyncMock, return_value=True):
@@ -187,6 +267,48 @@ async def test_setup_unload_and_diagnostics(hass, entry):
         assert '4242' not in repr(diagnostic)
         assert await async_unload_entry(hass, entry)
     await entry.runtime_data.async_shutdown()
+
+
+async def test_wifi_setup_starts_listener_before_configuring_device(hass, entry):
+    entry.__dict__['data'] = {
+        **entry.data,
+        'transport': 'wifi',
+        'server_host': 'ha.example.test',
+        'server_port': 8443,
+        'bind_host': '0.0.0.0',
+        'endpoint_configured': False,
+    }
+    entry._async_set_state(hass, ConfigEntryState.SETUP_IN_PROGRESS, None)
+    hass.config_entries._entries[entry.entry_id] = entry
+    session = AsyncMock()
+    session.telemetry.return_value = deepcopy(DATA['telemetry']) | {
+        'model': 10004, 'serial': 4242, 'firmware': 12718,
+    }
+    session.configuration.return_value = deepcopy(DATA['configuration'])
+    events = []
+    server = SimpleNamespace(
+        async_start=AsyncMock(side_effect=lambda: events.append('server_started')),
+        async_stop=AsyncMock(side_effect=lambda: events.append('server_stopped')),
+        async_session=AsyncMock(return_value=session),
+        async_discard=AsyncMock(),
+    )
+
+    async def configure(*args, **kwargs):
+        assert events == ['server_started']
+        events.append('endpoint_configured')
+        return WifiServerSettings('previous.example', 443, 'fallback.example', 443), {'verified': True}
+
+    with patch('custom_components.catch_control.CatchWifiServer', return_value=server), patch(
+        'custom_components.catch_control.configure_websocket_server', side_effect=configure
+    ), patch.object(hass.config_entries, 'async_forward_entry_setups', new_callable=AsyncMock), patch.object(
+        hass.config_entries, 'async_unload_platforms', new_callable=AsyncMock, return_value=True
+    ):
+        assert await async_setup_entry(hass, entry)
+        assert events == ['server_started', 'endpoint_configured']
+        assert entry.data['endpoint_configured'] is True
+        assert entry.data['previous_server1'] == 'previous.example'
+        assert await async_unload_entry(hass, entry)
+    server.async_stop.assert_awaited_once()
 
 
 @pytest.mark.parametrize('configuration_timeout', [False, True])
@@ -275,3 +397,40 @@ async def test_connection_uses_connectable_ha_device(hass):
     with patch('custom_components.catch_control.connection.bluetooth.async_ble_device_from_address', return_value=None):
         with pytest.raises(ConnectionError, match='not visible'):
             client_for(hass, device.address)
+
+
+def test_generated_wifi_certificate_is_persistent_long_lived_rsa(tmp_path):
+    certificate_path, key_path = ensure_certificate(tmp_path / 'tls')
+    first_key = key_path.read_bytes()
+    second_certificate, second_key = ensure_certificate(tmp_path / 'tls')
+    assert (second_certificate, second_key) == (certificate_path, key_path)
+    assert second_key.read_bytes() == first_key
+    assert key_path.stat().st_mode & 0o777 == 0o600
+    key = load_pem_private_key(first_key, password=None)
+    certificate = x509.load_pem_x509_certificate(certificate_path.read_bytes())
+    assert isinstance(key, RSAPrivateKey) and key.key_size == 2048
+    assert certificate.issuer == certificate.subject
+    assert certificate.not_valid_after_utc > datetime.now(timezone.utc).replace(year=datetime.now(timezone.utc).year + 9)
+
+
+async def test_wifi_server_accepts_tls_binary_request_response(hass):
+    server = CatchWifiServer(hass, '127.0.0.1', 0)
+    await server.async_start()
+    port = server._site._server.sockets[0].getsockname()[1]
+    try:
+        async with ClientSession() as client:
+            async with client.ws_connect(f'wss://127.0.0.1:{port}/srwe', ssl=False, autoping=False) as socket:
+                session = await server.async_session(timeout=1)
+                await socket.ping(b'health')
+                pong = await socket.receive(timeout=1)
+                assert pong.type == WSMsgType.PONG and pong.data == b'health'
+                request = asyncio.create_task(session.telemetry())
+                message = await socket.receive(timeout=1)
+                assert message.type == WSMsgType.BINARY and message.data == b'\x09'
+                response = bytearray(145)
+                response[61:67] = bytes((20, 39, 146, 16, 174, 49))
+                await socket.send_bytes(response)
+                telemetry = await request
+                assert (telemetry['model'], telemetry['serial'], telemetry['firmware']) == (10004, 4242, 12718)
+    finally:
+        await server.async_stop()

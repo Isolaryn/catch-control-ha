@@ -33,4 +33,4 @@ class ScheduleEntity(CatchEntity):
 
     @property
     def available(self):
-        return super().available and self.schedule is not None and bool(self.coordinator.password) and self.coordinator.identity.firmware == 12718
+        return super().available and self.schedule is not None and self.coordinator.can_write and self.coordinator.identity.firmware == 12718
