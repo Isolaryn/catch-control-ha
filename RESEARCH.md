@@ -43,10 +43,20 @@ Verification failures are reported without automatically repeating the save.
 
 Schedules use minutes from midnight. The official
 [Configurator guide](https://www.catchpower.com.au/_files/ugd/cfbb6e_1a7740aefa8d4a269a88e425325fb5ff.pdf)
-advises avoiding overlaps. Endpoint inclusivity, overnight scheduling and
-overlapping-slot priority are unverified. New overlapping/touching active windows
-and overnight windows are conservatively rejected. Existing overlaps can be
-read and disabled.
+advises avoiding overlaps. Static analysis of the bundled controller firmware
+shows that a schedule matches from its start minute (inclusive) to its stop
+minute (exclusive). A start later than its stop is treated as an overnight
+window. If several schedules match, the controller selects the record with the
+greatest numeric start-minute value; equal start times keep the lowest-numbered
+slot. The mode is read only after that selection, so mode values have no
+priority. This numeric comparison has a counter-intuitive overnight edge case:
+after midnight, an overlapping previous-day schedule with a large start value
+can beat a more recently started same-day schedule.
+
+The library still conservatively rejects new overlapping/touching active
+windows and overnight windows because the vendor advises avoiding overlaps and
+these paths have not been exercised on hardware. Existing overlaps can be read
+and disabled.
 
 ## Wi-Fi findings
 
