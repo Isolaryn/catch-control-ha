@@ -126,6 +126,42 @@ RS485 packet/error/timeout counters and cloud-tether message count. These are
 additional device diagnostics, not Bluetooth link-quality measurements. A Wi-Fi
 health report will not by itself diagnose an HA adapter/proxy disconnection.
 
+## Remote debug channel
+
+Firmware 12718 has a second, runtime-only WebSocket client for remote debugging.
+It is separate from the `/srwe` control connection. The WebSocket dispatcher
+provides three management operations:
+
+- `0x75` enables or disables remote debug.
+- `0x76` replaces its URL with a string of at most 40 bytes.
+- `0x77` returns the 43-byte Wi-Fi health structure described above; despite its
+  position next to the remote-debug setters, it is a diagnostic read operation.
+
+Enabling remote debug replaces ESP-IDF's `vprintf` callback with a wrapper that
+copies firmware console output into a protected buffer and then calls the
+original callback. A periodic task maintains the separate WebSocket and sends a
+fixed 2,084-byte binary record. The record begins with a 34-byte header containing
+the device MAC, selected control-channel index, four status bytes and five
+control-state floats; a 16-bit length at header offset 32 describes the buffered
+log text beginning at offset 34. The five float meanings have not yet been
+labelled with enough confidence for a public decoder.
+
+The remote-debug socket is bidirectional. Its receive handler accepts binary
+messages that can set an ESP log level for a named tag, reset the firmware's
+known tag list to warning level, or select the control channel represented in
+the next snapshots. No shell, arbitrary memory access, firmware extraction or
+general `/srwe` command tunnel was found in this handler.
+
+The compiled default is a vendor-owned plaintext `ws://` URL. The setter accepts
+a complete replacement URL, and neither the remote-debug client setup nor its
+message handler shows application authentication. A local experiment should set
+an isolated listener URL before enabling the feature, capture only for a bounded
+period, and then disable it. Runtime logs and the extra control snapshot could
+help correlate unmapped dispatcher operations with internal state, but they do
+not directly reveal the remaining packet layouts. Higher log levels also add a
+second connection and additional work on the controller, so this should remain
+a diagnostic tool rather than the normal Home Assistant transport.
+
 ## Evidence and next checks
 
 Initial investigation used read-only static analysis and ICMP plus TCP-connect checks on
