@@ -7,10 +7,9 @@ import re
 from construct import Byte, Bytes, Int16sl, Int16ul, Struct, Terminated
 
 from .configuration import ConfigurationConflict, WriteVerificationError
-from .protocol import ProtocolError, parse_frame
+from .protocol import GET_WIFI_SETTINGS, ProtocolError, parse_frame
 from .schemas import FRAME, PAYLOAD_SIZE
 
-GET_WIFI_SETTINGS = 7
 SET_WIFI_SETTINGS = 8
 
 _HOST = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,27}[A-Za-z0-9])?")

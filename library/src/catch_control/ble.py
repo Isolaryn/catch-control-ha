@@ -6,7 +6,8 @@ import math
 import logging
 from bleak import BleakClient, BleakScanner
 from .configuration import (
-    Schedule, SchedulePlan, WriteVerificationError, plan_schedule as make_schedule_plan,
+    ConfigurationConflict, Schedule, SchedulePlan, WriteVerificationError,
+    plan_schedule as make_schedule_plan,
 )
 from .network import (
     GET_WIFI_SETTINGS, WifiServerPlan, decode_server_settings,

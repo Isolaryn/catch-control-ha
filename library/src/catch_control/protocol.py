@@ -22,6 +22,7 @@ CHARACTERISTIC_UUID = "49535343-1e4d-4bd9-ba61-23c647249616"
 IDENTITY = 0
 GET_CONFIGURATION = 1
 LIVE_DATA = 3
+GET_WIFI_SETTINGS = 7
 
 
 class ProtocolError(ValueError):
@@ -36,8 +37,8 @@ class Identity:
 
 
 def read_request(opcode: int) -> bytes:
-    if opcode not in (IDENTITY, GET_CONFIGURATION, LIVE_DATA):
-        raise ValueError("Only identity, configuration and live-data reads are implemented")
+    if opcode not in (IDENTITY, GET_CONFIGURATION, LIVE_DATA, GET_WIFI_SETTINGS):
+        raise ValueError("Unsupported read opcode")
     return FRAME.build({"body": {"value": {"opcode": opcode, "payload": bytes(PAYLOAD_SIZE)}}})
 
 

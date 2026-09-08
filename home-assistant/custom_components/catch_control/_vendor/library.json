@@ -3,12 +3,12 @@
   "version": "0.3.0",
   "sha256": {
     "__init__.py": "0537dcceecf634368ea0940acd3216aa4b70089bc4f043754f8ca8db70d6fc4f",
-    "ble.py": "9d36450f09677df6bd1eb65a72cb44ced60598d60521088da4fd45ff231c6754",
+    "ble.py": "bf90e3807c9cc41ce7e1c31ffee2c7c07d6e8571a1a0a1e11e02402f9bef83b0",
     "checksum.py": "85682d0a5604a81df443dd7b25554fb16eec581d952ac9e24de8428bab3f9d36",
     "configuration.py": "54c380438f0ad5a9359fb28a5b28bf960830c7882a644a25a7cde80995906639",
     "enums.py": "dc75fb8a2298bbe8111a9e2a9bd3707c0dccbb5901899f8d139ae6b504341d74",
-    "network.py": "6d35fd99c2e5d630dfcedd69293c0e3aab7f69c76867d2d4cb20cb70543c82ae",
-    "protocol.py": "e32d06b23232dc5d828a0abea5c78445440699ea36c8d879f1d181c4a4d62cf6",
+    "network.py": "204f0b491b1d1eda9b370e63b7f5393019c3cf36bc4f6a3a549da8b0ef42ca00",
+    "protocol.py": "8e50192e4032cb453f635b1963eca8db83d3035726f5e4756f15640cebafbabe",
     "schemas.py": "024f454d4a8dee5816af8c602582e65cb05de83879be7c9670d88a16d70a1f20",
     "wifi.py": "7c9c52588b8c9d1da6e837fe4844b369d19d8083e77ff7e711240a1a6c55bf7b"
   }

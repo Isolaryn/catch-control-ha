@@ -23,6 +23,7 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(crc16(b'123456789'), 0x4B37)
         self.assertEqual(read_request(0), bytes(253) + bytes.fromhex('55e8'))
         self.assertEqual(read_request(3), b'\x03' + bytes(252) + bytes.fromhex('94ad'))
+        self.assertEqual(read_request(7), b'\x07' + bytes(252) + bytes.fromhex('d7a2'))
         with self.assertRaises(ValueError):
             read_request(8)
 
